@@ -178,7 +178,7 @@ def main():
                     listing.click()
                     page.wait_for_timeout(2000)
 
-                    name_attibute = 'aria-label'
+                    name_attribute = 'aria-label'
                     address_xpath = '//button[@data-item-id="address"]//div[contains(@class, "fontBodyMedium")]'
                     website_xpath = '//a[@data-item-id="authority"]//div[contains(@class, "fontBodyMedium")]'
                     phone_number_xpath = '//button[contains(@data-item-id, "phone:tel:")]//div[contains(@class, "fontBodyMedium")]'
@@ -188,9 +188,8 @@ def main():
                     
                     business = Business()
                    
-                    if len(listing.get_attribute(name_attibute)) >= 1:
-        
-                        business.name = listing.get_attribute(name_attibute)
+                    if name_value := listing.get_attribute(name_attribute):
+                        business.name = name_value.strip()
                     else:
                         business.name = ""
 
@@ -216,7 +215,7 @@ def main():
                         business.reviews_count = ""
                         
                     if page.locator(reviews_average_xpath).count() > 0:
-                        business.reviews_average = float(page.locator(reviews_average_xpath).get_attribute(name_attibute).split()[0].replace(',','.').strip())
+                        business.reviews_average = float(page.locator(reviews_average_xpath).get_attribute(name_attribute).split()[0].replace(',','.').strip())
                     else:
                         business.reviews_average = ""
                 
