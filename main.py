@@ -9,22 +9,37 @@ import sys
 @dataclass
 class Business:
     """holds business data"""
-
     name: str = None
     address: str = None
     domain: str = None
     website: str = None
     phone_number: str = None
-    category :str = None
-    location : str = None
+    category: str = None
+    location: str = None
     reviews_count: int = None
     reviews_average: float = None
     latitude: float = None
     longitude: float = None
+    
     def __hash__(self):
-        """Make Business hashable based on its attributes for duplicate detection"""
-        return hash((self.name, self.address, self.domain, self.website, self.phone_number, self.category, self.location, 
-                     self.reviews_count, self.reviews_average, self.latitude, self.longitude))
+        """Make Business hashable for duplicate detection.
+        Consider businesses different if:
+        - Name is different, OR
+        - Same name but different non-empty contact info (domain/website/phone)
+        """
+        # Create a tuple of fields that must match for duplicates
+        # We'll include name plus any non-empty contact info fields
+        hash_fields = [self.name]
+        # Only include contact info fields if they're not empty
+        if self.domain:
+            hash_fields.append(f"domain:{self.domain}")
+        if self.website:
+            hash_fields.append(f"website:{self.website}")
+        if self.phone_number:
+            hash_fields.append(f"phone:{self.phone_number}")
+        
+        return hash(tuple(hash_fields))
+
 @dataclass
 class BusinessList:
     """holds list of Business objects,
@@ -33,14 +48,16 @@ class BusinessList:
     business_list: list[Business] = field(default_factory=list)
     _seen_businesses: set = field(default_factory=set, init=False)
     today = datetime.datetime.now().strftime("%Y-%m-%d")
-    save_at = os.path.join('GMaps Data',today)
-    os.makedirs(save_at,exist_ok=True)
+    save_at = os.path.join('GMaps Data', today)
+    os.makedirs(save_at, exist_ok=True)
 
     def add_business(self, business: Business):
-        """Add a business to the list if it's not a duplicate"""
-        if business not in self._seen_businesses:
+        """Add a business to the list if it's not a duplicate based on key attributes"""
+        business_hash = hash(business)
+        if business_hash not in self._seen_businesses:
             self.business_list.append(business)
-            self._seen_businesses.add(business)
+            self._seen_businesses.add(business_hash)
+    
     def dataframe(self):
         """transform business_list to pandas dataframe
 
@@ -66,19 +83,14 @@ class BusinessList:
         """
         self.dataframe().to_csv(f"{self.save_at}/{filename}.csv", index=False)
 
-def extract_coordinates_from_url(url: str) -> tuple[float,float]:
+def extract_coordinates_from_url(url: str) -> tuple[float, float]:
     """helper function to extract coordinates from url"""
-    
     coordinates = url.split('/@')[-1].split('/')[0]
     # return latitude, longitude
     return float(coordinates.split(',')[0]), float(coordinates.split(',')[1])
 
+
 def main():
-    
-    ########
-    # input 
-    ########
-    
     # read search from arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("-s", "--search", type=str)
@@ -110,17 +122,12 @@ def main():
         if len(search_list) == 0:
             print('Error occured: You must either pass the -s search argument, or add searches to input.txt')
             sys.exit()
-        
-    ###########
-    # scraping
-    ###########
+    
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=False)
         page = browser.new_page(locale="en-GB")
 
         page.goto("https://www.google.com/maps", timeout=20000)
-        # wait is added for dev phase. can remove it in production
-        #page.wait_for_timeout(5000)
         
         for search_for_index, search_for in enumerate(search_list):
             print(f"-----\n{search_for_index} - {search_for}".strip())
@@ -134,8 +141,6 @@ def main():
             # scrolling
             page.hover('//a[contains(@href, "https://www.google.com/maps/place")]')
 
-            # this variable is used to detect if the bot
-            # scraped the same number of listings in the previous iteration
             previously_counted = 0
             while True:
                 page.mouse.wheel(0, 10000)
@@ -154,8 +159,6 @@ def main():
                     print(f"Total Scraped: {len(listings)}")
                     break
                 else:
-                    # logic to break from loop to not run infinitely
-                    # in case arrived at all available listings
                     if (
                         page.locator(
                             '//a[contains(@href, "https://www.google.com/maps/place")]'
@@ -175,14 +178,14 @@ def main():
                             f"Currently Scraped: ",
                             page.locator(
                                 '//a[contains(@href, "https://www.google.com/maps/place")]'
-                            ).count(),end='\r'
+                            ).count(), end='\r'
                         )
 
             business_list = BusinessList()
 
             # scraping
             for listing in listings:
-                try:
+                try:                        
                     listing.click()
                     page.wait_for_timeout(2000)
 
@@ -192,11 +195,10 @@ def main():
                     phone_number_xpath = '//button[contains(@data-item-id, "phone:tel:")]//div[contains(@class, "fontBodyMedium")]'
                     review_count_xpath = '//div[@jsaction="pane.reviewChart.moreReviews"]//span'
                     reviews_average_xpath = '//div[@jsaction="pane.reviewChart.moreReviews"]//div[@role="img"]' # or .fontDisplayLarge locator
-                    
-                    
+                                                           
                     business = Business()
                    
-                    if name_value := page.locator(name_attribute).inner_text():        
+                    if name_value := page.locator(name_attribute).inner_text():
                         business.name = name_value.strip()
                     else:
                         business.name = ""
@@ -208,7 +210,7 @@ def main():
 
                     if page.locator(website_xpath).count() > 0:
                         business.domain = page.locator(website_xpath).all()[0].inner_text()
-                        business.website =f"https://www.{page.locator(website_xpath).all()[0].inner_text()}"
+                        business.website = f"https://www.{page.locator(website_xpath).all()[0].inner_text()}"
                     else:
                         business.website = ""
 
@@ -218,12 +220,12 @@ def main():
                         business.phone_number = ""
                         
                     if page.locator(review_count_xpath).count() > 0:
-                        business.reviews_count = int(page.locator(review_count_xpath).inner_text().split()[0].replace(',','').strip())
+                        business.reviews_count = int(page.locator(review_count_xpath).inner_text().split()[0].replace(',', '').strip())
                     else:
                         business.reviews_count = ""
                         
                     if page.locator(reviews_average_xpath).count() > 0:
-                        business.reviews_average = float(page.locator(reviews_average_xpath).get_attribute('aria-label').split()[0].replace(',','.').strip())
+                        business.reviews_average = float(page.locator(reviews_average_xpath).get_attribute('aria-label').split()[0].replace(',', '.').strip())
                     else:
                         business.reviews_average = ""
                 
@@ -233,21 +235,16 @@ def main():
 
                     business_list.add_business(business)
                 except Exception as e:
-                    print(f'Error occured: {e}',end='\r')
+                    print(f'Error occurred: {e}', end='\r')
             
-            #########
             # output
-            #########
             business_list.save_to_excel(f"{search_for}".replace(' ', '_'))
             business_list.save_to_csv(f"{search_for}".replace(' ', '_'))
 
         browser.close()
 
-
 if __name__ == "__main__":
     try:
-      main()
+        main()
     except Exception as e:
-        print( f'Failed err: {e}')
-    except KeyboardInterrupt:
-        sys.exit(1)
+        print(f'Failed err: {e}')
