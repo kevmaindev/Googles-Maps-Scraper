@@ -21,18 +21,26 @@ class Business:
     reviews_average: float = None
     latitude: float = None
     longitude: float = None
-
-
+    def __hash__(self):
+        """Make Business hashable based on its attributes for duplicate detection"""
+        return hash((self.name, self.address, self.domain, self.website, self.phone_number, self.category, self.location, 
+                     self.reviews_count, self.reviews_average, self.latitude, self.longitude))
 @dataclass
 class BusinessList:
     """holds list of Business objects,
     and save to both excel and csv
     """
     business_list: list[Business] = field(default_factory=list)
+    _seen_businesses: set = field(default_factory=set, init=False)
     today = datetime.datetime.now().strftime("%Y-%m-%d")
-    save_at = f'GMaps Data/{today}'
+    save_at = os.path.join('GMaps Data',today)
     os.makedirs(save_at,exist_ok=True)
 
+    def add_business(self, business: Business):
+        """Add a business to the list if it's not a duplicate"""
+        if business not in self._seen_businesses:
+            self.business_list.append(business)
+            self._seen_businesses.add(business)
     def dataframe(self):
         """transform business_list to pandas dataframe
 
@@ -178,17 +186,17 @@ def main():
                     listing.click()
                     page.wait_for_timeout(2000)
 
-                    name_attribute = 'aria-label'
+                    name_attribute = 'h1.DUwDvf'
                     address_xpath = '//button[@data-item-id="address"]//div[contains(@class, "fontBodyMedium")]'
                     website_xpath = '//a[@data-item-id="authority"]//div[contains(@class, "fontBodyMedium")]'
                     phone_number_xpath = '//button[contains(@data-item-id, "phone:tel:")]//div[contains(@class, "fontBodyMedium")]'
                     review_count_xpath = '//div[@jsaction="pane.reviewChart.moreReviews"]//span'
-                    reviews_average_xpath = '//div[@jsaction="pane.reviewChart.moreReviews"]//div[@role="img"]'
+                    reviews_average_xpath = '//div[@jsaction="pane.reviewChart.moreReviews"]//div[@role="img"]' # or .fontDisplayLarge locator
                     
                     
                     business = Business()
                    
-                    if name_value := listing.get_attribute(name_attribute):
+                    if name_value := page.locator(name_attribute).inner_text():        
                         business.name = name_value.strip()
                     else:
                         business.name = ""
@@ -215,7 +223,7 @@ def main():
                         business.reviews_count = ""
                         
                     if page.locator(reviews_average_xpath).count() > 0:
-                        business.reviews_average = float(page.locator(reviews_average_xpath).get_attribute(name_attribute).split()[0].replace(',','.').strip())
+                        business.reviews_average = float(page.locator(reviews_average_xpath).get_attribute('aria-label').split()[0].replace(',','.').strip())
                     else:
                         business.reviews_average = ""
                 
@@ -223,7 +231,7 @@ def main():
                     business.location = search_for.split(' in ')[-1].strip()
                     business.latitude, business.longitude = extract_coordinates_from_url(page.url)
 
-                    business_list.business_list.append(business)
+                    business_list.add_business(business)
                 except Exception as e:
                     print(f'Error occured: {e}',end='\r')
             
@@ -241,3 +249,5 @@ if __name__ == "__main__":
       main()
     except Exception as e:
         print( f'Failed err: {e}')
+    except KeyboardInterrupt:
+        sys.exit(1)
